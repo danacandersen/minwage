@@ -109,35 +109,19 @@ di as text "[1A] date range: " %td r(min) " to " %td r(max)
 
 * --- Destring core numeric variables if stored as strings ---
 * Handles NA / . / null / NULL values gracefully.
+* NOTE: do NOT include "." in the ignore list — it would strip decimal points
+* from values like "14.777" → "14777", corrupting numeric data.
+* We handle Stata's own missing (.) separately; CSV missings are "NA"/empty.
 foreach var in temp total_precip wind_spd experience tot_hrs piece prod top_up mw {
     capture confirm numeric variable `var'
     if _rc {
         di as text "[1A] destinging `var'..."
-        destring `var', replace ignore("NA" "." "" "null" "NULL")
+        destring `var', replace ignore("NA" "null" "NULL")
     }
 }
 
-* --- Replace sentinel / implausible weather values with missing ---
-* The raw data contains large numeric sentinel codes (e.g. ~1e+14) for
-* missing weather readings that were not caught by destring (they are
-* already numeric). Plausible ranges: temp -50 to 50°C, precip 0-2000mm,
-* wind 0-300 km/h. Anything far outside these is a data error.
-* We use conservative thresholds well above any plausible value.
-di as text "[1A] Replacing implausible weather sentinels with missing..."
-
-quietly count if !missing(temp) & (temp > 500 | temp < -200)
-di as text "  temp sentinels replaced: " r(N)
-replace temp = . if temp > 500 | temp < -200
-
-quietly count if !missing(total_precip) & total_precip > 5000
-di as text "  total_precip sentinels replaced: " r(N)
-replace total_precip = . if total_precip > 5000
-
-quietly count if !missing(wind_spd) & wind_spd > 500
-di as text "  wind_spd sentinels replaced: " r(N)
-replace wind_spd = . if wind_spd > 500
-
-di as text "[1A] Weather missingness after sentinel removal:"
+* --- Weather missingness check ---
+di as text "[1A] Weather missingness:"
 foreach var in temp total_precip wind_spd {
     quietly count if missing(`var')
     di as text "  `var' missing: " r(N) " (" %5.1f (r(N)/_N*100) "%)"
