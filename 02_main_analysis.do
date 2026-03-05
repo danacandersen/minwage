@@ -71,8 +71,8 @@ foreach v in ///
 
 foreach m in ///
     Y FE CLUSTVAR ///
-    USE_WEATHER USE_EXPER USE_HOURS USE_DAYFLAGS USE_LIFECYCLE USE_TIMEFE ///
-    USE_FLOORS MIN_HRS MIN_PROD MIN_EARN USE_MIN_PROD ///
+    USE_WEATHER USE_HOURS USE_DAYFLAGS USE_LIFECYCLE USE_TIMEFE ///
+    USE_FLOORS MIN_HRS MIN_TREES ///
     TAU CORE0 CORE1 MAXW AUTO_WIN_2A AUTO_WIN_2B ///
     WPRE_MAN_2A WPOST_MAN_2A PRE_MIN_MAN_2B POST_MAX_MAN_2B ///
     TY_2A CONTROL_2A TY_2B BCPLACEBO_2B ///
@@ -109,18 +109,25 @@ global CLUSTVAR worker_id
 
 * ----- Control toggles -----
 global USE_WEATHER   1    // temp, wind, precip (quadratic)
-global USE_EXPER     1    // experience quadratic
 global USE_HOURS     1    // tot_hrs_day
 global USE_DAYFLAGS  1    // multi_contract_day
 global USE_LIFECYCLE 1    // contract ramp + season ramp + ramp×cum_seasons
 global USE_TIMEFE    1    // 1 = absorb event-week FE in DiD (not in event study)
+* Note: experience excluded — constant within worker×year, collinear with worker FE.
+*       Within-season learning captured by season_days_worked in LIFECYCLE.
 
 * ----- Floor filters -----
+* MIN_HRS:   minimum total hours worked that day across all contracts (tot_hrs_day).
+*            Excludes days where total planting time is very short — likely reflecting
+*            non-planting activity (management, first aid, wildfire closure, etc.).
+* MIN_TREES: minimum trees planted in THIS observation (prod * tot_hrs).
+*            Screens out short-stint observations on split-contract days, e.g. a
+*            worker spending 1hr on contract A and 7hrs on contract B: the 1-hr obs
+*            is excluded if it falls below MIN_TREES, the 7-hr obs is kept.
+*            Also screens genuinely unproductive observations regardless of hours.
 global USE_FLOORS   1
-global MIN_HRS      2     // minimum hours/day
-global MIN_PROD    50     // minimum productivity (trees/hour)
-global MIN_EARN    30     // minimum piece-rate earnings (piece*prod)
-global USE_MIN_PROD 1     // also apply MIN_PROD filter
+global MIN_HRS      2     // minimum total hours/day (tot_hrs_day)
+global MIN_TREES  100     // minimum trees planted this obs (prod * tot_hrs)
 
 * ----- Auto event-window (TAU rule) -----
 * TAU: fraction of core-week density required at each event week.
@@ -171,7 +178,6 @@ if _rc {
 global X ""
 if $USE_HOURS==1    global X "$X tot_hrs_day"
 if $USE_DAYFLAGS==1 global X "$X multi_contract_day"
-if $USE_EXPER==1    global X "$X c.experience##c.experience"
 if $USE_WEATHER==1  global X "$X c.temp##c.temp c.wind_spd##c.wind_spd precip0 c.precip_pos##c.precip_pos"
 
 * Lifecycle/ramp controls
@@ -198,8 +204,7 @@ global SAMPLE_OK "1==1"
 if $USE_FLOORS==1 {
     global SAMPLE_OK "$SAMPLE_OK & tot_hrs_day >= $MIN_HRS"
     global SAMPLE_OK "$SAMPLE_OK & piece > 0 & prod > 0"
-    global SAMPLE_OK "$SAMPLE_OK & (piece*prod) >= $MIN_EARN"
-    if $USE_MIN_PROD==1 global SAMPLE_OK "$SAMPLE_OK & prod >= $MIN_PROD"
+    global SAMPLE_OK "$SAMPLE_OK & (prod * tot_hrs) >= $MIN_TREES"
 }
 
 * Debug output
@@ -379,10 +384,17 @@ gen byte in_esamp_2A = (sample_2A==1)
 replace  in_esamp_2A = 0 if !inrange(event_week_2A, -$WPRE_2A, $WPOST_2A)
 replace  in_esamp_2A = 0 if !($SAMPLE_OK)
 replace  in_esamp_2A = 0 if missing($Y)
-replace  in_esamp_2A = 0 if !inlist(province_s, "BC", "$CONTROL_2A")
+if "$CONTROL_2A"=="ABON" ///
+    replace in_esamp_2A = 0 if !inlist(province_s, "BC", "AB", "ON")
+else ///
+    replace in_esamp_2A = 0 if !inlist(province_s, "BC", "$CONTROL_2A")
 
 gen byte bc_obs_2A   = (in_esamp_2A==1) & (province_s=="BC")
-gen byte ctrl_obs_2A = (in_esamp_2A==1) & (province_s=="$CONTROL_2A")
+* ctrl_obs_2A: all non-BC obs when ABON, otherwise the single control province
+if "$CONTROL_2A"=="ABON" ///
+    gen byte ctrl_obs_2A = (in_esamp_2A==1) & (province_s!="BC")
+else ///
+    gen byte ctrl_obs_2A = (in_esamp_2A==1) & (province_s=="$CONTROL_2A")
 
 bysort event_week_2A: egen int bcN_2A   = total(bc_obs_2A)   if !missing(event_week_2A)
 bysort event_week_2A: egen int ctrlN_2A = total(ctrl_obs_2A) if !missing(event_week_2A)
@@ -607,7 +619,15 @@ di as text "[2B] FINAL window:  [$PRE_MIN_2B, $POST_MAX_2B]"
 
 
 * --- 2B Baseline DiD regression ---
-* Absorbs event_weeky_FE to control for common week effects across years.
+* event_weeky_FE is ALWAYS absorbed here, regardless of USE_TIMEFE.
+* Rationale: 2B uses previous BC years (2016/2017) as the control group.
+* There are no common calendar-time shocks by construction (years differ),
+* but we allow planting output to follow a common within-season path:
+* week 3 of the season should look similar in 2016 and 2018 absent a reform.
+* Absorbing event_weeky_FE nets out this common seasonal trajectory,
+* so the DiD identifies deviations from that shared seasonal path in 2018.
+* (This is distinct from 2A, where USE_TIMEFE controls a standard common
+*  time-period effect within a single calendar year across provinces.)
 di as text "[2B] Running baseline DiD..."
 reghdfe $Y ///
     i.treated_year_2B##i.post_y_2B ///
