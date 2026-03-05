@@ -1,0 +1,8 @@
+.DS_Store
+*.dta
+logs/
+# Stata batch-mode root logs (our dated logs in logs/ are tracked separately)
+00_data_prep.log
+01_data_checks.log
+02_main_analysis.log
+03_heterogeneity.log
