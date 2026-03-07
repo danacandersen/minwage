@@ -4,7 +4,7 @@
 
 How does a minimum wage increase affect worker productivity, and what are the mechanisms?
 The project focuses on understanding both the average effect and the heterogeneous responses
-across workers with different probabilities of the minimum wage binding (`phat`).
+across workers with different pre-determined exposure to the minimum wage floor (`d̄_ic`).
 
 ## Setting
 
@@ -22,61 +22,76 @@ The tree planting context is well-suited for this question:
 
 ## Mechanisms of Interest
 
-1. **Piece-rate adjustment**: Firms may lower the piece rate ($ per tree) to offset the wage
-   floor, passing costs back to workers — consistent with firm-level incentives
-2. **Threat effects**: Workers who risk falling below the floor may face firing threats,
-   affecting effort even before the floor binds
-3. **Binding probability (`phat`)**: Only ~3% of workers receive top-ups, but output is
-   stochastic, so all workers face some probability of the floor binding. Theory predicts
-   effects should scale with this probability
+1. **Piece-rate adjustment**: Firms may raise the piece rate ($ per tree) post-reform to
+   attract and retain workers under a higher floor — all workers see higher piece rates,
+   which raises the opportunity cost of reduced effort
+2. **Income effects / backward-bending labor supply**: Higher piece rates mean high-ability
+   workers can hit income targets with less effort. Workers far from the floor benefit most
+   from piece-rate increases → largest effort reductions among high-d̄_ic workers
+3. **Threat effects**: Workers close to the floor face binding risk and potential firing
+   pressure, which may hold effort stable even post-reform — attenuating the response
+   among low-d̄_ic workers
+4. **Pre-determined exposure (`d̄_ic`)**: The expected log gap between predicted incentive
+   earnings and the MW floor, constructed entirely from pre-reform data. Workers differ
+   in `d̄_ic` by ability and contract difficulty. Theory and evidence suggest effects
+   scale with this measure — but in the opposite direction to simple binding-probability
+   predictions (see Current Findings)
 
 ## Identification Strategy
 
 **Section 2A — Cross-province DiD (primary):**
-BC workers vs. AB or ON workers in the treated year, before and after June 1.
+BC workers vs. AB workers in the treated year, before and after June 1.
 Event study around the June 1 cutoff with auto-selected event window (TAU rule).
+AB is the preferred control (ON had its own large MW increase in 2018).
 
 **Section 2B — Within-BC placebo years (secondary):**
 BC workers in the treated year (2018) vs. BC workers in placebo years (2016, 2017).
 Identification is weaker here; 2A is the primary focus.
 
 **Heterogeneity (Section 3) — DDD:**
-Triple-difference interacting BC × post with phat quartiles or ability bins to test
-whether productivity responses scale with binding probability.
+Triple-difference interacting BC × post with quartile bins and a continuous parametric
+interaction of `d̄_ic` (pre-determined exposure measure). Tests whether productivity
+responses scale with pre-reform distance to the MW floor.
 
 ## Baseline Specification
 
 - **Estimator**: `reghdfe`
 - **Fixed effects**: Worker FE + Contract FE (TWFE)
 - **Clustering**: Worker-level
-- **Controls**: Weather (temp, wind, precip, quadratics), experience (quadratic),
-  hours, multi-contract day flag, contract lifecycle ramp, season ramp,
-  ramp × cumulative seasons interaction
+- **Controls**: Weather (temp, wind, precip, quadratics), hours, multi-contract day flag,
+  contract lifecycle ramp, season ramp, ramp × cumulative seasons interaction
 - **Sample floors**: ≥2 hrs/day, ≥50 trees/hr, ≥$30 earnings, positive piece rate and output
 
-## Current Status & Key Findings (Preliminary)
+## Current Status & Key Findings (2026-03-06)
 
-**Status**: Early stage. Inherited from student dissertation; now taking the project forward.
+**Status**: All four do-files run clean. Sections 2 and 3 complete; results in hand.
+Full modular pipeline: `00_data_prep` → `01_data_checks` → `02_main_analysis` → `03_heterogeneity`.
 
-**Headline finding**: The MW increase reduces productivity on average, with heterogeneous
-effects by `phat` that are not yet well understood. Paradoxically, the largest productivity
-declines appear among highly productive workers with near-zero top-up probability, while
-low-productivity workers (high `phat`) respond very little. All workers see a piece-rate
-increase post-reform, consistent with firm-level adjustment.
+**Average effect (Section 2A):** MW increase reduces `ln_incentive` in BC relative to AB
+after June 1, 2018. Consistent across DiD and event study specifications.
 
-**Open question**: Whether the heterogeneity result reflects a genuine mechanism or a
-specification/measurement issue with `phat` construction — in particular, whether `phat`
-is too collinear with worker ability to separately identify their effects.
+**Heterogeneity (Section 3) — Headline finding:**
+- Parametric DDD: treat × post = **−0.155** (p=0.004); d̄_ic × treat × post = **−0.143** (p=0.048)
+- Quartile bins: Bin 1 (closest to floor) = −0.008 (n.s.); Bin 4 (furthest) = **−0.227** (p=0.014)
+- Pattern is **monotonically increasing** — workers furthest from the floor show the largest
+  productivity declines, the opposite of what a naïve binding-probability story predicts
+- Volatility DDD: workers with higher idiosyncratic earnings volatility show *smaller* declines
+
+**Leading interpretation:** Income effects from piece-rate increases dominate among high-ability
+workers (high d̄_ic), who can reduce effort while still earning more than before the reform.
+Low-d̄_ic workers may be stabilized by threat effects or genuine binding risk.
+
+**Key validity concern:** Mean reversion in α̂_i — pre-trend check by bin is the most
+important pending diagnostic.
 
 ## Next Steps
 
-- [ ] Split `dana_minwage_2026_feb.do` into modular sub-do-files
-- [ ] Build `run_analysis.py` master script to run Stata from VS Code
-- [ ] Set up log file output for all Stata runs (saved to project directory)
-- [ ] Investigate `phat` construction — check R² and variable importance,
-      consider weather+MW-only version for cleaner exogenous variation
-- [ ] Run event study split by phat quartile to check for pre-existing trends
-- [ ] Assess whether ability and phat effects can be separately identified
+- [ ] Event study split by d̄_ic quartile — check for pre-existing trends by bin
+- [ ] Assess mean reversion: regress within-worker FE change on d̄_ic
+- [ ] Robustness: weather-only version of d̄_ic (drop α̂_i from exposure measure)
+- [ ] 2019 replication: run Section 3 for the second BC reform year
+- [ ] Refine figures for paper quality (currently exploratory/monochrome)
+- [ ] Draft Section 3 of paper
 
 ## Target Output
 
@@ -92,15 +107,15 @@ Journal paper targeting **Journal of Human Resources (JHR)** or
 - **Primary tool**: Stata, everything runs from do-files (no interactive work)
 - **IDE**: VS Code, with Stata called via `run_analysis.py`
 - **Version control**: Git. Commits made on explicit user instruction only
-- **Log files**: All Stata runs save log files to the project directory;
-  logs used for interpretation, sanity checks, and debugging without re-running
+- **Log files**: All Stata runs save log files to `logs/`; logs used for interpretation,
+  sanity checks, and debugging without re-running
 
 ### File Organization
 
 - Analysis split into modular sub-do-files, orchestrated by a master Python script
-- Date-stamped do-files for major versions (e.g., `dana_minwage_2026_feb.do`)
-- Figures exported as PNG to the project directory
-- Log files saved to project directory alongside do-files
+- Framework documented in `mw_exposure_framework_final.md` (authoritative reference)
+- Figures exported as PNG to `output/`
+- Log files saved to `logs/` alongside do-files
 
 ### Stata Coding Style
 
